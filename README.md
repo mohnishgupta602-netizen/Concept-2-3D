@@ -1,0 +1,35 @@
+# Concept3D Generative
+
+Welcome to **Concept3D Generative** – a zero-dependency, true Generative 3D AI application powered by the Tripo3D API.
+
+## Overview
+
+Concept3D Generative allows users to seamlessly generate, visualize, and interact with 3D models driven by Artificial Intelligence. The platform takes simple text prompts or image uploads, converts them into detailed 3D files (like `.glb`), and provides a beautiful interface to view and interact with the resulting geometry right in the browser.
+
+### Key Features
+
+* **Text-to-3D Generation:** Enter a prompt (e.g., "A flying car", "Futuristic Chair"), and the AI leverages the Tripo3D cloud backend to forge a custom 3D model in real time.
+* **Image-to-AI Prompting:** Upload an image (`.png`, `.jpg`, `.webp`). A lightweight Vision Transformer (`google/vit-base-patch16-224`) classifies the image and automatically feeds the inferred concept into the 3D generation pipeline.
+* **Interactive 3D Viewer:** Built with React and modern 3D viewing libraries, allowing you to rotate, zoom, and explore the generated models.
+* **Fallback Geometry:** If a specific model generation fails, the system provides a sleek, fallback geometric representation based on standard shapes.
+* **Wikipedia Integration:** Automatically pulls contextual information and summaries about the requested concept directly from Wikipedia.
+* **Audio Synthesis:** Features built-in Text-to-Speech (TTS) explanations of the generated 3D models. Supports both English (`en-US`) and Hindi (`hi-IN`).
+* **Direct Downloads:** Export generated `.glb` models instantly for use in external 3D software (Blender, Unity, etc.).
+
+## Project Structure
+
+* **`/backend`**: Contains the core Python API (FastAPI) responsible for bridging requests to the Tripo3D API, performing image classification using the HuggingFace `transformers` library, querying Wikipedia for contextual info, and handling database operations.
+* **`/frontend`**: A React-based Single Page Application (SPA) offering a sleek, glassmorphic UI, model viewers, animated gradients, and seamless API communication with the backend.
+
+## Tech Stack
+
+* **Frontend:** React, Vanilla CSS (with modern variables & keyframes), Web Speech API.
+* **Backend:** Python (FastAPI), Transformers (Vision classification), PIL, Wikipedia API.
+* **AI & 3D Integration:** Tripo3D API for cloud-based generative modeling.
+
+## Getting Started
+
+*(Instructions for setting up the backend server and running the React frontend development server would go here.)*
+
+---
+*Created as a demonstration of advanced AI integrations and full-stack generative 3D capabilities.*
