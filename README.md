@@ -29,7 +29,39 @@ Concept3D Generative allows users to seamlessly generate, visualize, and interac
 
 ## Getting Started
 
-*(Instructions for setting up the backend server and running the React frontend development server would go here.)*
+### 1. Start the Backend Server (FastAPI)
+
+Open your terminal and start the Python backend server:
+
+```bash
+# Navigate to the backend directory
+cd concept3d/backend
+
+# Activate the virtual environment (Windows)
+venv\Scripts\activate
+
+# Install any missing dependencies (if this is your first run)  
+pip install -r requirements.txt
+
+# Start the server (runs on port 8000 by default)
+uvicorn main:app --reload
+```
+
+### 2. Start the Frontend Server (React)
+
+Open a **new terminal tab/window** and start the frontend development server:
+
+```bash
+# Navigate to the frontend directory
+cd concept3d/frontend
+
+# Install node dependencies (if this is your first run)
+npm install
+
+# Start the React development server
+npm start
+```
+
+The application will now be running at `http://localhost:3000` and successfully communicating with your AI backend at `http://localhost:8000`.
 
 ---
-*Created as a demonstration of advanced AI integrations and full-stack generative 3D capabilities.*
