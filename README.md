@@ -40,7 +40,7 @@ cd concept3d/backend
 # Activate the virtual environment (Windows)
 venv\Scripts\activate
 
-# Install any missing dependencies (if this is your first run)  
+# Install any missing dependencies (if this is your first run)
 pip install -r requirements.txt
 
 # Start the server (runs on port 8000 by default)
@@ -65,3 +65,4 @@ npm start
 The application will now be running at `http://localhost:3000` and successfully communicating with your AI backend at `http://localhost:8000`.
 
 ---
+*Created as a demonstration of advanced AI integrations and full-stack generative 3D capabilities.*

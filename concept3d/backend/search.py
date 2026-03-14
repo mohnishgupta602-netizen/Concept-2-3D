@@ -2,8 +2,11 @@ import requests
 import time
 import os
 import uuid
+from dotenv import load_dotenv
 
-TRIPO_API_KEY = "tsk_BJcKjFX_okYzMo3q3ZIszWE6CNMlkDg3ro6RzPbYXpp"
+load_dotenv()
+
+TRIPO_API_KEY = os.getenv("TRIPO_API_KEY")
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 def search_models(query):
