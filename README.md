@@ -1,6 +1,6 @@
 # Concept3D Generative
 
-Welcome to **Concept3D Generative** – a zero-dependency, true Generative 3D AI application powered by the Tripo3D API.
+Welcome to **Concept3D Generative** – a zero-dependency, true Generative 3D AI application powered by the BlenderKit API.
 
 ## Overview
 
@@ -8,7 +8,7 @@ Concept3D Generative allows users to seamlessly generate, visualize, and interac
 
 ### Key Features
 
-* **Text-to-3D Generation:** Enter a prompt (e.g., "A flying car", "Futuristic Chair"), and the AI leverages the Tripo3D cloud backend to forge a custom 3D model in real time.
+* **Text-to-3D Generation:** Enter a prompt (e.g., "A flying car", "Futuristic Chair"), and the system leverages the BlenderKit REST API to search for and retrieve pre-converted 3D models in real time.
 * **Image-to-AI Prompting:** Upload an image (`.png`, `.jpg`, `.webp`). A lightweight Vision Transformer (`google/vit-base-patch16-224`) classifies the image and automatically feeds the inferred concept into the 3D generation pipeline.
 * **Interactive 3D Viewer:** Built with React and modern 3D viewing libraries, allowing you to rotate, zoom, and explore the generated models.
 * **Fallback Geometry:** If a specific model generation fails, the system provides a sleek, fallback geometric representation based on standard shapes.
@@ -18,14 +18,14 @@ Concept3D Generative allows users to seamlessly generate, visualize, and interac
 
 ## Project Structure
 
-* **`/backend`**: Contains the core Python API (FastAPI) responsible for bridging requests to the Tripo3D API, performing image classification using the HuggingFace `transformers` library, querying Wikipedia for contextual info, and handling database operations.
+* **`/backend`**: Contains the core Python API (FastAPI) responsible for bridging requests to the BlenderKit API, downloading `.glb` models locally to bypass CORS, performing image classification using the HuggingFace `transformers` library, querying Wikipedia for contextual info, and handling database operations.
 * **`/frontend`**: A React-based Single Page Application (SPA) offering a sleek, glassmorphic UI, model viewers, animated gradients, and seamless API communication with the backend.
 
 ## Tech Stack
 
 * **Frontend:** React, Vanilla CSS (with modern variables & keyframes), Web Speech API.
 * **Backend:** Python (FastAPI), Transformers (Vision classification), PIL, Wikipedia API.
-* **AI & 3D Integration:** Tripo3D API for cloud-based generative modeling.
+* **3D Asset Integration:** BlenderKit API for searching and retrieving high-quality, pre-converted 3D models.
 
 ## Getting Started
 
