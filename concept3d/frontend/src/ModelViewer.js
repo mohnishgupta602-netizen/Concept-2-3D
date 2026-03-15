@@ -2,10 +2,29 @@ import React, { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Stage } from "@react-three/drei";
 
+import * as THREE from "three";
+
 function AIModel({ url }) {
   const { scene } = useGLTF(url);
-  // Clone the scene to avoid reuse issues across renders
-  return <primitive object={scene.clone()} />;
+  
+  // Clone the scene and fix materials for community models
+  const clonedScene = scene.clone();
+  clonedScene.traverse((child) => {
+    if (child.isMesh) {
+      // Disable shadows which sometimes bug out poorly constructed models
+      child.castShadow = false;
+      child.receiveShadow = false;
+      if (child.material) {
+        // Force DoubleSide and turn off transparency which can cause z-sorting bugs
+        child.material.side = THREE.DoubleSide;
+        child.material.transparent = false;
+        child.material.depthWrite = true;
+        child.material.needsUpdate = true;
+      }
+    }
+  });
+
+  return <primitive object={clonedScene} />;
 }
 
 export default function ModelViewer({ data, fallbackShapes }) {
