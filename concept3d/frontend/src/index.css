@@ -50,6 +50,61 @@ body {
   animation: float 20s infinite ease-in-out alternate;
 }
 
+.light-cone {
+  position: absolute;
+  width: 42vw;
+  height: 65vh;
+  pointer-events: none;
+  filter: blur(36px);
+  opacity: 0.22;
+  transform-origin: center bottom;
+  mix-blend-mode: screen;
+  animation: sweepLight 16s ease-in-out infinite alternate;
+}
+
+.light-cone-left {
+  left: -8vw;
+  bottom: -14vh;
+  background: linear-gradient(
+    12deg,
+    rgba(0, 200, 255, 0.24) 0%,
+    rgba(120, 0, 255, 0.18) 38%,
+    rgba(0, 0, 0, 0) 82%
+  );
+  transform: perspective(900px) rotateY(24deg) rotateX(12deg);
+}
+
+.light-cone-right {
+  right: -10vw;
+  bottom: -18vh;
+  background: linear-gradient(
+    -16deg,
+    rgba(255, 0, 160, 0.2) 0%,
+    rgba(0, 113, 227, 0.18) 44%,
+    rgba(0, 0, 0, 0) 82%
+  );
+  transform: perspective(900px) rotateY(-28deg) rotateX(11deg);
+  animation-duration: 19s;
+}
+
+.horizon-glow {
+  position: absolute;
+  left: 50%;
+  bottom: -14vh;
+  width: 72vw;
+  height: 32vh;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 180, 255, 0.18) 0%,
+    rgba(138, 43, 226, 0.14) 32%,
+    rgba(0, 0, 0, 0) 72%
+  );
+  filter: blur(26px);
+  animation: pulseGlow 9s ease-in-out infinite;
+}
+
 .blob-1 {
   top: -10%;
   left: -10%;
@@ -81,6 +136,28 @@ body {
   0% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(5%, 10%) scale(1.1); }
   100% { transform: translate(-5%, -5%) scale(0.9); }
+}
+
+@keyframes sweepLight {
+  0% {
+    opacity: 0.18;
+    transform: perspective(900px) translateY(0) rotateY(18deg) rotateX(11deg);
+  }
+  100% {
+    opacity: 0.28;
+    transform: perspective(900px) translateY(-2.5vh) rotateY(30deg) rotateX(13deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.22;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 0.36;
+    transform: translateX(-50%) scale(1.06);
+  }
 }
 
 /* Layout */
@@ -442,4 +519,113 @@ header {
   background: rgba(0, 255, 128, 0.2);
   border-color: rgba(0, 255, 128, 0.5);
   transform: translateY(-2px);
+}
+
+/* Result layout with AI sidebar */
+.result-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: 1.2rem;
+}
+
+.result-main {
+  min-width: 0;
+}
+
+.agent-sidebar {
+  border: 1px solid var(--panel-border);
+  background: rgba(14, 16, 24, 0.7);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  max-height: 75vh;
+}
+
+.agent-sidebar-header h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  margin-bottom: 0.3rem;
+}
+
+.agent-sidebar-header p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.agent-messages {
+  margin-top: 0.9rem;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-right: 0.2rem;
+}
+
+.agent-msg {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+}
+
+.agent-msg.user {
+  background: rgba(0, 113, 227, 0.15);
+}
+
+.agent-msg.assistant {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.agent-msg-role {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.agent-msg-text {
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-main);
+  white-space: pre-wrap;
+}
+
+.agent-input-row {
+  margin-top: 0.9rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.agent-input-row textarea {
+  resize: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.92rem;
+  padding: 0.6rem 0.7rem;
+  outline: none;
+}
+
+.agent-input-row textarea:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.agent-input-row .btn-primary {
+  height: 40px;
+  padding: 0 1rem;
+  border-radius: 12px;
+}
+
+@media (max-width: 1100px) {
+  .result-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-sidebar {
+    max-height: 420px;
+  }
 }

@@ -1,6 +1,8 @@
 venv/
+.venv/
 backend/venv/
 node_modules/
+concept3d/frontend/node_modules/
 __pycache__/
 *.pyc
 .env

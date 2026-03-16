@@ -1,68 +1,211 @@
 # Concept3D Generative
 
-Welcome to **Concept3D Generative** – a zero-dependency, true Generative 3D AI application powered by the BlenderKit API.
+Concept3D Generative is a full-stack 3D idea explorer that turns text or image concepts into interactive 3D model experiences.
 
-## Overview
+It combines BlenderKit search, local model proxying, fallback geometry, Wikipedia grounding, voice narration, and a sidebar AI Q&A agent.
 
-Concept3D Generative allows users to seamlessly generate, visualize, and interact with 3D models driven by Artificial Intelligence. The platform takes simple text prompts or image uploads, converts them into detailed 3D files (like `.glb`), and provides a beautiful interface to view and interact with the resulting geometry right in the browser.
+## Features
 
-### Key Features
-
-* **Text-to-3D Generation:** Enter a prompt (e.g., "A flying car", "Futuristic Chair"), and the system leverages the BlenderKit REST API to search for and retrieve pre-converted 3D models in real time.
-* **Image-to-AI Prompting:** Upload an image (`.png`, `.jpg`, `.webp`). A lightweight Vision Transformer (`google/vit-base-patch16-224`) classifies the image and automatically feeds the inferred concept into the 3D generation pipeline.
-* **Interactive 3D Viewer:** Built with React and modern 3D viewing libraries, allowing you to rotate, zoom, and explore the generated models.
-* **Fallback Geometry:** If a specific model generation fails, the system provides a sleek, fallback geometric representation based on standard shapes.
-* **Wikipedia Integration:** Automatically pulls contextual information and summaries about the requested concept directly from Wikipedia.
-* **Audio Synthesis:** Features built-in Text-to-Speech (TTS) explanations of the generated 3D models. Supports both English (`en-US`) and Hindi (`hi-IN`).
-* **Direct Downloads:** Export generated `.glb` models instantly for use in external 3D software (Blender, Unity, etc.).
+- Text-to-3D concept generation using BlenderKit assets
+- Improved relevance scoring (less random model matches)
+- Automatic fallback geometry when no strong model match exists
+- Image-to-concept prompt detection using a vision classifier
+- Interactive web 3D viewer with orbit controls
+- Wikipedia concept overview panel
+- Wikipedia-grounded Q&A sidebar agent (`/agent/ask`)
+- Audio explanation (English + Hindi)
+- Direct `.glb` download for generated models
+- Subtle animated 3D background lighting in the UI
 
 ## Project Structure
 
-* **`/backend`**: Contains the core Python API (FastAPI) responsible for bridging requests to the BlenderKit API, downloading `.glb` models locally to bypass CORS, performing image classification using the HuggingFace `transformers` library, querying Wikipedia for contextual info, and handling database operations.
-* **`/frontend`**: A React-based Single Page Application (SPA) offering a sleek, glassmorphic UI, model viewers, animated gradients, and seamless API communication with the backend.
+```text
+concept3d/
+	backend/
+		main.py              # FastAPI app + endpoints
+		search.py            # BlenderKit search and ranking logic
+		vision.py            # Image classification
+		wikipedia_api.py     # Wikipedia summary helper
+		fallback.py          # Fallback shapes
+		database.py          # Optional MongoDB logging
+		models/              # Downloaded .glb files served locally
+	frontend/
+		src/
+			App.js             # Main UI + sidebar agent
+			ModelViewer.js     # 3D rendering
+			index.css          # Styling and background effects
+```
 
 ## Tech Stack
 
-* **Frontend:** React, Vanilla CSS (with modern variables & keyframes), Web Speech API.
-* **Backend:** Python (FastAPI), Transformers (Vision classification), PIL, Wikipedia API.
-* **3D Asset Integration:** BlenderKit API for searching and retrieving high-quality, pre-converted 3D models.
+- Frontend: React, Three.js (`@react-three/fiber`, `@react-three/drei`), CSS
+- Backend: FastAPI, Requests, Transformers, Pillow, Wikipedia
+- 3D Source: BlenderKit API
 
-## Getting Started
+## Prerequisites
 
-### 1. Start the Backend Server (FastAPI)
+- Python 3.10+
+- Node.js 18+
+- npm
+- BlenderKit API key
 
-Open your terminal and start the Python backend server:
+## Environment Variables
 
-```bash
-# Navigate to the backend directory
-cd concept3d/backend
+Create `concept3d/backend/.env`:
 
-# Activate the virtual environment (Windows)
-venv\Scripts\activate
-
-# Install any missing dependencies (if this is your first run)
-pip install -r requirements.txt
-
-# Start the server (runs on port 8000 by default)
-uvicorn main:app --reload
+```env
+BLENDERKIT_API_KEY=your_blenderkit_api_key_here
+MONGO_URI=mongodb://localhost:27017/
+FREE_AI_API_PROVIDER=openrouter
+FREE_AI_API_KEY=your_openrouter_key_here
+FREE_AI_API_MODEL=openai/gpt-oss-20b:free
+FREE_AI_API_URL=https://openrouter.ai/api/v1/chat/completions
 ```
 
-### 2. Start the Frontend Server (React)
+Notes:
+- `BLENDERKIT_API_KEY` is required for model search/download.
+- MongoDB is optional; app runs without it.
+- `FREE_AI_API_KEY` enables free-tier AI answers in `/agent/ask`.
+- If free AI is unavailable, backend automatically falls back to Wikipedia-only answer logic.
 
-Open a **new terminal tab/window** and start the frontend development server:
+## Quick Start (Windows)
 
-```bash
-# Navigate to the frontend directory
-cd concept3d/frontend
+If you only want to run the project quickly, do this from the repo root:
 
-# Install node dependencies (if this is your first run)
+### Terminal 1 (Backend)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+cd concept3d\backend
+..\..\.venv\Scripts\python.exe -m pip install -U pip
+..\..\.venv\Scripts\python.exe -m pip install fastapi uvicorn requests pymongo wikipedia transformers pillow python-multipart python-dotenv torch
+..\..\.venv\Scripts\python.exe -m uvicorn main:app --reload
+```
+
+### Terminal 2 (Frontend)
+
+```powershell
+cd concept3d\frontend
 npm install
-
-# Start the React development server
 npm start
 ```
 
-The application will now be running at `http://localhost:3000` and successfully communicating with your AI backend at `http://localhost:8000`.
+Open:
+- Frontend: http://127.0.0.1:3000
+- Backend docs: http://127.0.0.1:8000/docs
+
+If both open successfully, the project is running.
+
+## Setup & Run (Windows)
+
+From repository root (`Concept-2-3D`):
+
+### 1) Create/activate Python environment
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 2) Install backend dependencies
+
+```powershell
+cd concept3d\backend
+..\..\.venv\Scripts\python.exe -m pip install -U pip
+..\..\.venv\Scripts\python.exe -m pip install fastapi uvicorn requests pymongo wikipedia transformers pillow python-multipart python-dotenv torch
+```
+
+### 3) Start backend
+
+```powershell
+cd concept3d\backend
+..\..\.venv\Scripts\python.exe -m uvicorn main:app --reload
+```
+
+Backend URL: `http://127.0.0.1:8000`
+Docs: `http://127.0.0.1:8000/docs`
+
+### 4) Install frontend dependencies
+
+Open a new terminal:
+
+```powershell
+cd concept3d\frontend
+npm install
+```
+
+### 5) Start frontend
+
+```powershell
+cd concept3d\frontend
+npm start
+```
+
+Frontend URL: `http://127.0.0.1:3000`
+
+## API Endpoints
+
+- `GET /visualize?concept=<text>`
+	- Returns either a model payload or fallback geometry
+	- Includes `ai_overview` text from Wikipedia
+
+- `POST /upload`
+	- Multipart image upload
+	- Returns detected concept label
+
+- `POST /agent/ask`
+	- Wikipedia-grounded Q&A endpoint
+	- Uses free AI API (when configured) + strict context grounding
+	- Returns `used_free_ai: true|false` to indicate if free API answered
+	- Body:
+		```json
+		{
+			"concept": "car",
+			"question": "what is the work of a car?",
+			"model_name": "Covered Car"
+		}
+		```
+
+## Search Relevance Behavior
+
+`backend/search.py` uses scoring to reduce random results:
+
+- token matching on name/description/tags/category
+- phrase and similarity boosts
+- strict filtering for multi-word prompts
+- fallback response when no relevant GLTF candidate is found
+
+This avoids returning unrelated 3D assets for specific concepts.
+
+## Troubleshooting
+
+- `401` from BlenderKit:
+	- Verify `BLENDERKIT_API_KEY` in `concept3d/backend/.env`
+
+- Backend starts but no model appears:
+	- Query may fail strict relevance; fallback geometry is expected behavior
+
+- `/upload` returns weak concept:
+	- Ensure `torch` + `transformers` installed in `.venv`
+
+- Frontend source-map warnings:
+	- Non-blocking warnings from third-party packages
+
+- Port already in use:
+	- Stop existing process on `8000`/`3000` and restart services
+
+- Free AI API returns fallback only (`used_free_ai=false`):
+	- Verify `FREE_AI_API_KEY` is valid
+	- Check OpenRouter account privacy/guardrail settings
+	- Restart backend after `.env` changes
+
+## Future Improvements
+
+- Add concept synonym expansion (`auto` → `car`, etc.)
+- Persist Q&A conversation history by concept
+- Add model quality metadata in UI
 
 ---
-*Created as a demonstration of advanced AI integrations and full-stack generative 3D capabilities.*
+
+Built as a creative AI + 3D exploration project with FastAPI and React.
