@@ -88,8 +88,8 @@ function App() {
 
     const baseConcept = result.query_concept || "this concept";
     const intro = result.ai_overview
-      ? `I can answer follow-up questions about "${baseConcept}" using Wikipedia context. Ask anything about this idea or generated model.`
-      : `I can answer follow-up questions about "${baseConcept}". Wikipedia context may be limited for this concept.`;
+      ? `I can answer follow-up questions about "${baseConcept}". Ask anything about this idea or generated model.`
+      : `I can answer follow-up questions about "${baseConcept}". Information may be limited for this concept.`;
 
     setChatMessages([
       {
@@ -131,7 +131,7 @@ function App() {
         ...prev,
         {
           role: "assistant",
-          text: "I couldn't reach the Wikipedia-grounded AI agent right now. Please try again."
+          text: "I couldn't reach the AI agent right now. Please try again."
         }
       ]);
     } finally {
@@ -294,7 +294,7 @@ function App() {
               <aside className="agent-sidebar">
                 <div className="agent-sidebar-header">
                   <h3>Concept Discussion &amp; Q&amp;A</h3>
-                  <p>Wikipedia-grounded AI agent</p>
+                  <p>AI concept assistant</p>
                 </div>
 
                 <div className="agent-messages">
@@ -308,7 +308,7 @@ function App() {
                   {chatLoading && (
                     <div className="agent-msg assistant">
                       <div className="agent-msg-role">AI</div>
-                      <div className="agent-msg-text">Thinking with Wikipedia context...</div>
+                      <div className="agent-msg-text">Thinking...</div>
                     </div>
                   )}
                 </div>

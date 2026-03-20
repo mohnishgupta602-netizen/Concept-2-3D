@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import re
 import uuid
+import time
 from difflib import SequenceMatcher
 from dotenv import load_dotenv
 
@@ -14,6 +15,9 @@ BLENDERKIT_API_KEY = os.getenv("BLENDERKIT_API_KEY")
 STOPWORDS = {
     "a", "an", "the", "of", "for", "to", "in", "on", "with", "and", "or", "by", "is", "are"
 }
+
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY_SECONDS = 1.5
 
 
 def _normalize_text(value):
@@ -121,6 +125,38 @@ def _score_candidate(query, tokens, result):
     }
 
 
+def _request_json_with_retry(url, headers=None, timeout=30):
+    last_error = None
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as error:
+            last_error = error
+            if attempt < RETRY_ATTEMPTS:
+                delay = RETRY_BASE_DELAY_SECONDS * attempt
+                print(f"Retrying request ({attempt}/{RETRY_ATTEMPTS}) after error: {error}")
+                time.sleep(delay)
+    raise last_error
+
+
+def _download_binary_with_retry(url, timeout=60):
+    last_error = None
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response.content
+        except requests.RequestException as error:
+            last_error = error
+            if attempt < RETRY_ATTEMPTS:
+                delay = RETRY_BASE_DELAY_SECONDS * attempt
+                print(f"Retrying model download ({attempt}/{RETRY_ATTEMPTS}) after error: {error}")
+                time.sleep(delay)
+    raise last_error
+
+
 def search_models(query):
     # This now ACTS as the BlenderKit search engine instead of Tripo3D.
     print(f"Requesting BlenderKit to find: {query}")
@@ -173,60 +209,63 @@ def search_models(query):
             print(f"No strictly relevant GLTF model found for multi-word query '{query}'.")
             return []
 
-        ranked_candidates.sort(key=lambda item: item[0]["final_score"], reverse=True)
-        score_data, top_match, target_gltf_file = ranked_candidates[0]
-                
-        if not top_match or not target_gltf_file:
-            print(f"BlenderKit has models for '{query}', but none are in GLTF/GLB web-browser format yet.")
-            return []
-            
-        # Step 3: Fetch the direct download URL for the GLTF
-        download_id = target_gltf_file.get("id")
-        if not download_id:
-            return []
-        
-        # A scene_uuid is strictly required by BlenderKit API.
-        dummy_scene_uuid = str(uuid.uuid4())
-        download_endpoint = f"https://www.blenderkit.com/api/v1/downloads/{download_id}/?scene_uuid={dummy_scene_uuid}"
-        
-        print(
-            f"Selected BlenderKit model '{top_match.get('name', 'unknown')}' "
-            f"with relevance={score_data['relevance_score']:.2f} and exact_matches={score_data['exact_matches']}"
-        )
-        print(f"Found GLB on BlenderKit (ID {download_id}). Requesting download URL...")
-        dl_res = requests.get(download_endpoint, headers=headers, timeout=30)
-        dl_res.raise_for_status()
-        dl_data = dl_res.json()
-        
-        final_file_url = dl_data.get("filePath")
-        if not final_file_url:
-            print("BlenderKit did not return a valid file path for the model.")
-            return []
-            
         MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
         os.makedirs(MODELS_DIR, exist_ok=True)
-        
-        uid = top_match.get("id")
-        model_filename = f"{uid}.glb"
-        model_path = os.path.join(MODELS_DIR, model_filename)
-        
-        if not os.path.exists(model_path):
-            print(f"Downloading model locally to bypass CORS -> {model_filename}")
-            model_bin = requests.get(final_file_url, timeout=60).content
-            with open(model_path, "wb") as f:
-                f.write(model_bin)
-        
-        print(f"Success! Proxied and downloaded BlenderKit model.")
-        
-        # Return the unified format that app expects
-        return [{
-            "uid": uid,
-            "name": top_match.get("name", query.title()),
-            "description": top_match.get("description", f"BlenderKit Asset: {query.title()}"),
-            "viewer": f"http://localhost:8000/models/{model_filename}",
-            "isDownloadable": top_match.get("isFree", True),
-            "score": round(score_data["relevance_score"], 4)
-        }]
+
+        ranked_candidates.sort(key=lambda item: item[0]["final_score"], reverse=True)
+
+        for score_data, top_match, target_gltf_file in ranked_candidates:
+            download_id = target_gltf_file.get("id")
+            if not download_id:
+                continue
+
+            try:
+                dummy_scene_uuid = str(uuid.uuid4())
+                download_endpoint = (
+                    f"https://www.blenderkit.com/api/v1/downloads/{download_id}/"
+                    f"?scene_uuid={dummy_scene_uuid}"
+                )
+
+                print(
+                    f"Selected BlenderKit model '{top_match.get('name', 'unknown')}' "
+                    f"with relevance={score_data['relevance_score']:.2f} and exact_matches={score_data['exact_matches']}"
+                )
+                print(f"Found GLB on BlenderKit (ID {download_id}). Requesting download URL...")
+
+                dl_data = _request_json_with_retry(download_endpoint, headers=headers, timeout=30)
+                final_file_url = dl_data.get("filePath")
+                if not final_file_url:
+                    print("BlenderKit did not return a valid file path for the model.")
+                    continue
+
+                uid = top_match.get("id")
+                model_filename = f"{uid}.glb"
+                model_path = os.path.join(MODELS_DIR, model_filename)
+
+                if not os.path.exists(model_path):
+                    print(f"Downloading model locally to bypass CORS -> {model_filename}")
+                    model_bin = _download_binary_with_retry(final_file_url, timeout=60)
+                    with open(model_path, "wb") as f:
+                        f.write(model_bin)
+
+                print("Success! Proxied and downloaded BlenderKit model.")
+                return [{
+                    "uid": uid,
+                    "name": top_match.get("name", query.title()),
+                    "description": top_match.get("description", f"BlenderKit Asset: {query.title()}"),
+                    "viewer": f"http://localhost:8000/models/{model_filename}",
+                    "isDownloadable": top_match.get("isFree", True),
+                    "score": round(score_data["relevance_score"], 4)
+                }]
+
+            except requests.RequestException as error:
+                print(
+                    f"Download failed for candidate '{top_match.get('name', 'unknown')}'. "
+                    f"Trying next candidate. Error: {error}"
+                )
+
+        print(f"All relevant candidates failed to download for query '{query}'.")
+        return []
 
     except Exception as e:
         print(f"BlenderKit API Error: {e}")

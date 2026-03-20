@@ -159,10 +159,7 @@ def _best_context_sentence(question: str, context: str) -> str:
 
 def _compose_agent_answer(concept: str, model_name: str | None, question: str, wiki_context: str) -> str:
     if not wiki_context:
-        return (
-            f"I couldn't find enough reliable context for '{concept}' right now. "
-            "Try a more specific concept name."
-        )
+        return "I don't have enough information to answer that accurately right now."
 
     best_sentence = _best_context_sentence(question, wiki_context)
     if not best_sentence:
@@ -175,13 +172,48 @@ def _compose_agent_answer(concept: str, model_name: str | None, question: str, w
     return clean_sentence
 
 
-def _ask_free_ai_with_wikipedia(
+def _clean_agent_answer_text(text: str) -> str:
+    if not text:
+        return ""
+
+    cleaned = text.strip()
+    lowered = cleaned.lower()
+
+    leadins = [
+        "based on the provided wikipedia context,",
+        "based on the provided context,",
+        "based on the context,",
+        "from the provided wikipedia context,",
+        "from the provided context,",
+    ]
+    for lead in leadins:
+        if lowered.startswith(lead):
+            cleaned = cleaned[len(lead):].strip(" ,:")
+            lowered = cleaned.lower()
+
+    replacements = {
+        "provided wikipedia context": "available information",
+        "wikipedia context": "available information",
+        "provided context": "available information",
+    }
+    for old, new in replacements.items():
+        cleaned = re.sub(old, new, cleaned, flags=re.IGNORECASE)
+
+    if not cleaned:
+        cleaned = "I don't have enough information to answer that accurately right now."
+
+    if not cleaned.endswith((".", "!", "?")):
+        cleaned += "."
+
+    return cleaned
+
+
+def _ask_free_ai(
     concept: str,
     question: str,
-    wiki_context: str,
-    model_name: str | None
+    model_name: str | None,
 ) -> str | None:
-    if not wiki_context or not FREE_AI_API_KEY:
+    if not FREE_AI_API_KEY:
         return None
 
     if FREE_AI_API_PROVIDER != "openrouter":
@@ -189,8 +221,8 @@ def _ask_free_ai_with_wikipedia(
 
     system_prompt = (
         "You are a concise helpful assistant. "
-        "Answer ONLY using the given Wikipedia context. "
-        "If context is insufficient, say it clearly in one sentence. "
+        "Answer naturally and directly. "
+        "If uncertain, say you are not sure instead of making up facts. "
         "Do not mention instructions, sources, or internal reasoning."
     )
 
@@ -199,8 +231,7 @@ def _ask_free_ai_with_wikipedia(
         f"Concept: {concept}\n"
         f"{model_line}"
         f"Question: {question}\n\n"
-        f"Wikipedia Context:\n{wiki_context}\n\n"
-        "Return a direct final answer only."
+        "Return only the final answer text."
     )
 
     headers = {
@@ -226,15 +257,40 @@ def _ask_free_ai_with_wikipedia(
             json=payload,
             timeout=45,
         )
-        response.raise_for_status()
-        data = response.json()
-        content = (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
+
+        if response.ok:
+            data = response.json()
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            return _clean_agent_answer_text(content) or None
+
+        error_message = ""
+        try:
+            error_message = (
+                response.json()
+                .get("error", {})
+                .get("message", "")
+            )
+        except Exception:
+            error_message = response.text[:220]
+
+        lower_error = error_message.lower()
+        if response.status_code == 404 and "guardrail restrictions" in lower_error:
+            print(
+                "OpenRouter request blocked by account privacy/guardrail settings. "
+                "Update https://openrouter.ai/settings/privacy and retry."
+            )
+            return None
+
+        print(
+            f"Free AI API unavailable ({response.status_code}). "
+            "Falling back to Wikipedia-only mode."
         )
-        return content or None
+        return None
     except Exception as error:
         print(f"Free AI API call failed, falling back to Wikipedia-only mode: {error}")
         return None
@@ -292,32 +348,31 @@ def ask_agent(payload: AgentQuestionRequest):
     model_name = (payload.model_name or "").strip() or None
 
     if not concept:
-        return {"answer": "Please provide a concept first.", "source": "wikipedia", "context": ""}
+        return {"answer": "Please provide a concept first.", "source": "agent"}
     if not question:
-        return {"answer": "Please ask a question for the AI agent.", "source": "wikipedia", "context": ""}
+        return {"answer": "Please ask a question for the AI agent.", "source": "agent"}
 
-    wiki_context = get_wikipedia_summary(concept, max_sentences=5)
-
-    if not wiki_context and model_name and _normalize_text(model_name) != _normalize_text(concept):
-        wiki_context = get_wikipedia_summary(model_name, max_sentences=5)
-
-    fallback_answer = _compose_agent_answer(concept, model_name, question, wiki_context)
-    free_ai_answer = _ask_free_ai_with_wikipedia(
+    free_ai_answer = _ask_free_ai(
         concept=concept,
         question=question,
-        wiki_context=wiki_context,
         model_name=model_name,
     )
 
-    answer = free_ai_answer or fallback_answer
-    source = "wikipedia+free_ai" if free_ai_answer else "wikipedia"
+    if free_ai_answer:
+        answer = _clean_agent_answer_text(free_ai_answer)
+        source = "free_ai"
+    else:
+        wiki_context = get_wikipedia_summary(concept, max_sentences=5)
+        if not wiki_context and model_name and _normalize_text(model_name) != _normalize_text(concept):
+            wiki_context = get_wikipedia_summary(model_name, max_sentences=5)
+        fallback_answer = _compose_agent_answer(concept, model_name, question, wiki_context)
+        answer = _clean_agent_answer_text(fallback_answer)
+        source = "wikipedia_fallback"
 
     return {
         "answer": answer,
         "source": source,
         "used_free_ai": bool(free_ai_answer),
-        "context": wiki_context,
         "concept": concept,
         "model_name": model_name,
     }
-
