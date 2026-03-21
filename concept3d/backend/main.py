@@ -8,8 +8,9 @@ from difflib import SequenceMatcher
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from search import search_models
 from fallback import generate_fallback
+from hybrid_pipeline import run_hybrid_pipeline
+from generative_stack import get_ml_status
 from database import save_search_result
 from wikipedia_api import get_wikipedia_summary
 from vision import classify_image
@@ -32,6 +33,7 @@ FREE_AI_API_URL = os.getenv(
     "FREE_AI_API_URL",
     "https://openrouter.ai/api/v1/chat/completions"
 ).strip()
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000").strip().rstrip("/")
 
 
 class AgentQuestionRequest(BaseModel):
@@ -297,39 +299,66 @@ def _ask_free_ai(
 
 @app.get("/visualize")
 def visualize(concept: str):
-    # Tripo3D Generative AI Search Pipeline (Zero Sketchfab)
-    generated_models = search_models(concept)
+    hybrid_result = run_hybrid_pipeline(
+        concept=concept,
+        models_dir=models_dir,
+        backend_base_url=BACKEND_BASE_URL,
+    )
     ai_overview = get_wikipedia_summary(concept)
 
-    if generated_models:
-        top_match = generated_models[0]
-        # Save to DB
+    if hybrid_result.get("model_url"):
+        metadata = hybrid_result.get("metadata", {})
+        model_name = metadata.get("name") or concept.title()
+        description = metadata.get("description") or f"3D model for {concept}"
+        confidence = float(metadata.get("confidence_score") or 0.0)
+        source = metadata.get("source") or "hybrid"
+
         save_search_result(
             concept=concept,
-            model_name=top_match.get("name"),
-            description=top_match.get("description"),
-            similarity_score=top_match.get("score"),
-            source="tripo3d_ai"
+            model_name=model_name,
+            description=description,
+            similarity_score=confidence,
+            source=source,
         )
-        return {
-            "type": "model",
-            "data": top_match,
-            "ai_overview": ai_overview
+
+        model_payload = {
+            "uid": metadata.get("name", concept.title()).replace(" ", "_").lower(),
+            "name": model_name,
+            "description": description,
+            "viewer": hybrid_result.get("model_url"),
+            "isDownloadable": True,
+            "score": confidence,
         }
-        
-    # Save fallback to DB
+
+        return {
+            "type": hybrid_result.get("type", "retrieved"),
+            "model_url": hybrid_result.get("model_url"),
+            "metadata": metadata,
+            "data": model_payload,
+            "ai_overview": ai_overview,
+        }
+
     save_search_result(
         concept=concept,
-        model_name="fallback",
-        description="Geometric fallback",
+        model_name="fallback_primitive",
+        description="Geometric primitive fallback",
         similarity_score=0.0,
-        source="internal"
+        source="internal",
     )
 
     return {
-        "type": "fallback",
-        "shapes": generate_fallback(concept),
-        "ai_overview": ai_overview
+        "type": "generated",
+        "model_url": None,
+        "metadata": {
+            "source": "primitive_fallback",
+            "confidence_score": 0.0,
+            "name": concept.title(),
+            "description": "Primitive fallback representation",
+            "tags": [],
+            "format": "none",
+        },
+        "shapes": hybrid_result.get("fallback_shapes", generate_fallback(concept)),
+        "ai_overview": ai_overview,
     }
 
 @app.post("/upload")
@@ -376,3 +405,8 @@ def ask_agent(payload: AgentQuestionRequest):
         "concept": concept,
         "model_name": model_name,
     }
+
+
+@app.get("/ml/status")
+def ml_status():
+    return get_ml_status()

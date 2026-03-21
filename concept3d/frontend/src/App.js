@@ -115,7 +115,7 @@ function App() {
         body: JSON.stringify({
           concept: result.query_concept,
           question,
-          model_name: result.type === "model" ? result.data?.name : null
+          model_name: result.data?.name || result.metadata?.name || null
         })
       });
 
@@ -147,9 +147,10 @@ function App() {
   };
   
   const handleDownload = () => {
-    if (result && result.type === "model" && result.data.viewer) {
+    const viewerUrl = result?.data?.viewer || result?.model_url;
+    if (viewerUrl) {
       // Directs user to download the generated .glb file served locally
-      window.open(result.data.viewer, '_blank');
+      window.open(viewerUrl, '_blank');
     }
   };
 
@@ -232,17 +233,21 @@ function App() {
                 <div className="panel-header">
                   <div>
                     <h2 className="model-title">
-                      {result.type === "model" ? `Generated: ${result.data.name}` : `Fallback Geometry: ${result.query_concept}`}
+                      {result?.data?.viewer
+                        ? `${result.type === "retrieved" ? "Retrieved" : "Generated"}: ${result.data?.name || result.metadata?.name || result.query_concept}`
+                        : `Fallback Geometry: ${result.query_concept}`}
                     </h2>
                     <div style={{marginTop: '0.5rem', display: 'flex', gap: '1rem', alignItems: 'center'}}>
                       <span>
                         <span className="status-dot"></span>
                         <span style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>
-                          {result.type === "model" ? 'Custom Generative AI Output' : 'Generated Fallback Primitive'}
+                          {result?.data?.viewer
+                            ? (result.type === "retrieved" ? 'High-confidence retrieved 3D asset' : 'AI generated fallback 3D model')
+                            : 'Generated Fallback Primitive'}
                         </span>
                       </span>
 
-                      {result.type === "model" && result.data.isDownloadable && (
+                      {result?.data?.viewer && result.data?.isDownloadable && (
                         <button className="btn-secondary btn-download" onClick={handleDownload} style={{padding: '0.3rem 0.8rem', fontSize: '0.85rem'}}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                           Direct Save .glb
@@ -274,8 +279,8 @@ function App() {
                 </div>
 
                 <ModelViewer
-                  data={result.type === "model" ? result.data : null}
-                  fallbackShapes={result.type === "fallback" ? result.shapes : null}
+                  data={result?.data?.viewer ? result.data : null}
+                  fallbackShapes={result?.data?.viewer ? null : result.shapes}
                 />
 
                 {result.ai_overview && (

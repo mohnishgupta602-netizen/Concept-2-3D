@@ -1,46 +1,32 @@
 # Concept3D Generative
 
-Concept3D Generative is a full-stack 3D idea explorer that turns text or image concepts into interactive 3D model experiences.
+Concept3D Generative is a hybrid Concept-to-3D web app. It accepts text or image input, retrieves high-quality existing assets when possible, and falls back to generation when retrieval confidence is low.
 
-It combines BlenderKit search, local model proxying, fallback geometry, Wikipedia grounding, voice narration, and a sidebar AI Q&A agent.
+## Core Highlights
 
-## Features
+- Hybrid pipeline: retrieval first, generation fallback
+- Multi-source adapters: BlenderKit, Sketchfab, Poly-compatible archives
+- Composite relevance ranking (semantic + token + phrase + quality)
+- Local backend proxy serving `.glb` to avoid CORS issues
+- ML fallback pipeline support: Stable Diffusion + OpenLRM bridge
+- Interactive React 3D viewer + concept Q&A sidebar
 
-- Text-to-3D concept generation using BlenderKit assets
-- Improved relevance scoring (less random model matches)
-- Automatic fallback geometry when no strong model match exists
-- Image-to-concept prompt detection using a vision classifier
-- Interactive web 3D viewer with orbit controls
-- Wikipedia concept overview panel
-- Wikipedia-grounded Q&A sidebar agent (`/agent/ask`)
-- Audio explanation (English + Hindi)
-- Direct `.glb` download for generated models
-- Subtle animated 3D background lighting in the UI
-
-## Project Structure
+## Repository Layout
 
 ```text
 concept3d/
-	backend/
-		main.py              # FastAPI app + endpoints
-		search.py            # BlenderKit search and ranking logic
-		vision.py            # Image classification
-		wikipedia_api.py     # Wikipedia summary helper
-		fallback.py          # Fallback shapes
-		database.py          # Optional MongoDB logging
-		models/              # Downloaded .glb files served locally
-	frontend/
-		src/
-			App.js             # Main UI + sidebar agent
-			ModelViewer.js     # 3D rendering
-			index.css          # Styling and background effects
+  backend/
+    main.py
+    hybrid_pipeline.py
+    generative_stack.py
+    requirements.txt
+    requirement.txt
+    models/
+    ml/
+  frontend/
+    package.json
+    src/
 ```
-
-## Tech Stack
-
-- Frontend: React, Three.js (`@react-three/fiber`, `@react-three/drei`), CSS
-- Backend: FastAPI, Requests, Transformers, Pillow, Wikipedia
-- 3D Source: BlenderKit API
 
 ## Prerequisites
 
@@ -49,41 +35,53 @@ concept3d/
 - npm
 - BlenderKit API key
 
-## Environment Variables
+## Environment Setup
 
-Create `concept3d/backend/.env`:
+Create `concept3d/backend/.env` (this file is ignored by git):
 
 ```env
-BLENDERKIT_API_KEY=your_blenderkit_api_key_here
+BLENDERKIT_API_KEY=your_blenderkit_api_key
 MONGO_URI=mongodb://localhost:27017/
+
 FREE_AI_API_PROVIDER=openrouter
-FREE_AI_API_KEY=your_openrouter_key_here
+FREE_AI_API_KEY=your_openrouter_key
 FREE_AI_API_MODEL=openai/gpt-oss-20b:free
 FREE_AI_API_URL=https://openrouter.ai/api/v1/chat/completions
+
+SKETCHFAB_API_TOKEN=
+POLY_ARCHIVE_FEED_URL=
+MODEL_CONFIDENCE_THRESHOLD=0.56
+
+GENERATOR_ENABLED=true
+GENERATOR_DEVICE=auto
+GENERATOR_MAX_SECONDS=240
+SD_MODEL_ID=runwayml/stable-diffusion-v1-5
+SD_NUM_STEPS=20
+SD_IMAGE_WIDTH=512
+SD_IMAGE_HEIGHT=512
+SD_GUIDANCE_SCALE=6.5
+
+OPENLRM_REPO_DIR=./ml/OpenLRM
+OPENLRM_INFER_CONFIG=./configs/infer-s.yaml
+OPENLRM_MODEL_NAME=zxhezexin/openlrm-obj-small-1.1
 ```
 
-Notes:
-- `BLENDERKIT_API_KEY` is required for model search/download.
-- MongoDB is optional; app runs without it.
-- `FREE_AI_API_KEY` enables free-tier AI answers in `/agent/ask`.
-- If free AI is unavailable, backend automatically falls back to Wikipedia-only answer logic.
+## Local Run (Windows)
 
-## Quick Start (Windows)
+From repository root:
 
-If you only want to run the project quickly, do this from the repo root:
-
-### Terminal 1 (Backend)
+### Backend terminal
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 cd concept3d\backend
 ..\..\.venv\Scripts\python.exe -m pip install -U pip
-..\..\.venv\Scripts\python.exe -m pip install fastapi uvicorn requests pymongo wikipedia transformers pillow python-multipart python-dotenv torch
-..\..\.venv\Scripts\python.exe -m uvicorn main:app --reload
+..\..\.venv\Scripts\python.exe -m pip install -r requirements.txt
+..\..\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### Terminal 2 (Frontend)
+### Frontend terminal
 
 ```powershell
 cd concept3d\frontend
@@ -92,120 +90,81 @@ npm start
 ```
 
 Open:
+
 - Frontend: http://127.0.0.1:3000
 - Backend docs: http://127.0.0.1:8000/docs
-
-If both open successfully, the project is running.
-
-## Setup & Run (Windows)
-
-From repository root (`Concept-2-3D`):
-
-### 1) Create/activate Python environment
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-### 2) Install backend dependencies
-
-```powershell
-cd concept3d\backend
-..\..\.venv\Scripts\python.exe -m pip install -U pip
-..\..\.venv\Scripts\python.exe -m pip install fastapi uvicorn requests pymongo wikipedia transformers pillow python-multipart python-dotenv torch
-```
-
-### 3) Start backend
-
-```powershell
-cd concept3d\backend
-..\..\.venv\Scripts\python.exe -m uvicorn main:app --reload
-```
-
-Backend URL: `http://127.0.0.1:8000`
-Docs: `http://127.0.0.1:8000/docs`
-
-### 4) Install frontend dependencies
-
-Open a new terminal:
-
-```powershell
-cd concept3d\frontend
-npm install
-```
-
-### 5) Start frontend
-
-```powershell
-cd concept3d\frontend
-npm start
-```
-
-Frontend URL: `http://127.0.0.1:3000`
 
 ## API Endpoints
 
 - `GET /visualize?concept=<text>`
-	- Returns either a model payload or fallback geometry
-	- Includes `ai_overview` text from Wikipedia
-
+  - Returns `type: retrieved | generated`
+  - Returns `model_url`, `metadata`, and `data.viewer` for frontend compatibility
 - `POST /upload`
-	- Multipart image upload
-	- Returns detected concept label
-
+  - Image upload and concept classification
 - `POST /agent/ask`
-	- Wikipedia-grounded Q&A endpoint
-	- Uses free AI API (when configured) + strict context grounding
-	- Returns `used_free_ai: true|false` to indicate if free API answered
-	- Body:
-		```json
-		{
-			"concept": "car",
-			"question": "what is the work of a car?",
-			"model_name": "Covered Car"
-		}
-		```
+  - Concept Q&A agent response
+- `GET /ml/status`
+  - Reports ML readiness and cache status
 
-## Search Relevance Behavior
+## Requirement Files
 
-`backend/search.py` uses scoring to reduce random results:
+- `concept3d/backend/requirements.txt` is the canonical backend dependency file.
+- `concept3d/backend/requirement.txt` is kept in sync for compatibility with earlier scripts.
 
-- token matching on name/description/tags/category
-- phrase and similarity boosts
-- strict filtering for multi-word prompts
-- fallback response when no relevant GLTF candidate is found
+## GitHub Push Readiness Checklist
 
-This avoids returning unrelated 3D assets for specific concepts.
+- Ensure `.env` contains no placeholder secrets before running locally.
+- Do not commit API keys or model weights.
+- Confirm ignored heavy paths are excluded:
+  - `concept3d/backend/models/*.glb`
+  - `concept3d/backend/ml/OpenLRM/`
+  - `concept3d/backend/ml/cache/`
+  - `concept3d/backend/ml/hf_cache/`
 
-## Troubleshooting
+Recommended push flow:
 
-- `401` from BlenderKit:
-	- Verify `BLENDERKIT_API_KEY` in `concept3d/backend/.env`
+```powershell
+git status
+git add .
+git commit -m "docs: update README and backend requirements for hybrid+ML pipeline"
+git push origin main
+```
 
-- Backend starts but no model appears:
-	- Query may fail strict relevance; fallback geometry is expected behavior
+## How to Use & Run
 
-- `/upload` returns weak concept:
-	- Ensure `torch` + `transformers` installed in `.venv`
+- **Quickstart (development)**: start the backend and frontend as shown in the "Local Run (Windows)" section. Once both are running, open the frontend at `http://127.0.0.1:3000` and use the UI to submit text or image concepts.
 
-- Frontend source-map warnings:
-	- Non-blocking warnings from third-party packages
+- **API quick test (PowerShell)** — get a visualization for a concept:
 
-- Port already in use:
-	- Stop existing process on `8000`/`3000` and restart services
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/visualize?concept=red+vintage+chair" -Method Get | ConvertTo-Json -Depth 5
+```
 
-- Free AI API returns fallback only (`used_free_ai=false`):
-	- Verify `FREE_AI_API_KEY` is valid
-	- Check OpenRouter account privacy/guardrail settings
-	- Restart backend after `.env` changes
+- **Download generated GLB (example)** — the API response includes `model_url`. Use the URL to download the `.glb`:
 
-## Future Improvements
+```powershell
+#$resp = Invoke-RestMethod -Uri "http://127.0.0.1:8000/visualize?concept=red+vintage+chair"
+#Invoke-WebRequest -Uri $resp.model_url -OutFile generated.glb
+```
 
-- Add concept synonym expansion (`auto` → `car`, etc.)
-- Persist Q&A conversation history by concept
-- Add model quality metadata in UI
+## Installing / Cloning OpenLRM into `ml`
 
----
+The backend expects an OpenLRM working copy inside the `concept3d/backend/ml` directory. Clone the repository into that folder and follow any OpenLRM-specific setup instructions (models, configs) there.
 
-Built as a creative AI + 3D exploration project with FastAPI and React.
+Replace `<OPENLRM_REPO_URL>` with the official OpenLRM GitHub URL you intend to use.
+
+```powershell
+cd concept3d\backend\ml
+git clone <OPENLRM_REPO_URL> OpenLRM
+# Example (replace with the correct upstream URL):
+# git clone https://github.com/your-org/OpenLRM.git OpenLRM
+
+# After cloning, ensure the repo and model paths match the .env settings, e.g.:
+# OPENLRM_REPO_DIR=./ml/OpenLRM
+# OPENLRM_INFER_CONFIG=./configs/infer-s.yaml
+# OPENLRM_MODEL_NAME=zxhezexin/openlrm-obj-small-1.1
+```
+
+Notes:
+- Do not commit the OpenLRM model weights or large cache files into git. Keep them under `concept3d/backend/ml` which is ignored by the repository.
+- If you need to fetch pretrained OpenLRM weights from Hugging Face or another remote, follow the OpenLRM repository instructions and set `OPENLRM_MODEL_NAME` in `.env` accordingly.
