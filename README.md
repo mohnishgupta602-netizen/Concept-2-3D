@@ -71,15 +71,21 @@ POLY_ARCHIVE_FEED_URL=
 # Model confidence threshold (0-1)
 MODEL_CONFIDENCE_THRESHOLD=0.56
 
-# ML Generation settings
+# ML Generation settings (SDXL recommended for best quality)
 GENERATOR_ENABLED=true
 GENERATOR_DEVICE=auto
 GENERATOR_MAX_SECONDS=240
-SD_MODEL_ID=runwayml/stable-diffusion-v1-5
-SD_NUM_STEPS=20
-SD_IMAGE_WIDTH=512
-SD_IMAGE_HEIGHT=512
-SD_GUIDANCE_SCALE=6.5
+
+# Stable Diffusion XL (upgraded from SD 1.5)
+SD_MODEL_ID=stabilityai/stable-diffusion-xl-base-1.0
+SD_NUM_STEPS=40
+SD_IMAGE_WIDTH=768
+SD_IMAGE_HEIGHT=768
+SD_GUIDANCE_SCALE=8.0
+SD_NUM_CANDIDATES=2
+SD_SEED=
+SD_OPENLRM_OPTIMIZED=true
+SD_NEGATIVE_PROMPT=text, watermark, logo, signature, low quality, blurry, deformed, cartoon, anime, painting, drawing, sketch, illustration, distorted, ugly, duplicate, multiple objects, cropped, out of frame, worst quality, low resolution
 
 # OpenLRM paths
 OPENLRM_REPO_DIR=./ml/OpenLRM
@@ -194,6 +200,62 @@ AI identifies and labels parts of 3D models:
 - **Chair**: seat, backrest, leg, armrest, cushion
 - **Human/Animal**: head, torso, arm, leg, etc.
 
+## Stable Diffusion Upgrade for OpenLRM
+
+The ML generation pipeline has been upgraded to **Stable Diffusion XL (SDXL)** for significantly better 3D model generation:
+
+### Key Improvements
+
+| Feature | Old (SD 1.5) | New (SDXL) |
+|---------|-------------|------------|
+| Model | `runwayml/stable-diffusion-v1-5` | `stabilityai/stable-diffusion-xl-base-1.0` |
+| Resolution | 512x512 | 768x768 |
+| Steps | 20 | 40 |
+| Guidance Scale | 6.5 | 8.0 |
+| Scheduler | DPM Solver | Euler Discrete |
+
+### OpenLRM-Optimized Prompts
+
+When `SD_OPENLRM_OPTIMIZED=true` (default), prompts are enhanced for best OpenLRM results:
+- Professional product photography style
+- Clean white backgrounds
+- Soft studio lighting at 45 degrees
+- Orthographic perspective
+- Single isolated object
+
+### Environment Variables
+
+```env
+# Use SDXL (recommended)
+SD_MODEL_ID=stabilityai/stable-diffusion-xl-base-1.0
+
+# Higher resolution for better 3D detail
+SD_IMAGE_WIDTH=768
+SD_IMAGE_HEIGHT=768
+
+# More steps for quality
+SD_NUM_STEPS=40
+
+# Stronger prompt adherence
+SD_GUIDANCE_SCALE=8.0
+
+# OpenLRM-specific optimizations
+SD_OPENLRM_OPTIMIZED=true
+```
+
+### Memory Considerations
+
+SDXL requires more VRAM than SD 1.5:
+- **GPU with 8GB+ VRAM**: Full SDXL quality
+- **GPU with 4-6GB VRAM**: Enable CPU offloading (automatic)
+- **CPU only**: Falls back to lower resolution (automatic)
+
+The system automatically applies memory optimizations:
+- Attention slicing
+- VAE slicing  
+- Model CPU offloading (when needed)
+- xFormers (if available)
+
 ## GitHub Push Readiness Checklist
 
 - Ensure `.env` contains no placeholder secrets before running locally
@@ -230,7 +292,3 @@ Ensure paths match `.env` settings for `OPENLRM_REPO_DIR`, `OPENLRM_INFER_CONFIG
 | 429 Rate Limit errors | Gemini has rate limiting; system will retry with backoff |
 | Low quality results | Increase `MODEL_CONFIDENCE_THRESHOLD` in `.env` |
 | CORS errors | Backend proxy handles this; ensure backend is running |
-
-## License
-
-MIT

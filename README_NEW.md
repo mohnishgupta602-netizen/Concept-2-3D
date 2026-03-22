@@ -230,7 +230,3 @@ Ensure paths match `.env` settings for `OPENLRM_REPO_DIR`, `OPENLRM_INFER_CONFIG
 | 429 Rate Limit errors | Gemini has rate limiting; system will retry with backoff |
 | Low quality results | Increase `MODEL_CONFIDENCE_THRESHOLD` in `.env` |
 | CORS errors | Backend proxy handles this; ensure backend is running |
-
-## License
-
-MIT

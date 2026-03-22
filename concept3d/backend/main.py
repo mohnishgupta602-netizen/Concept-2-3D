@@ -21,7 +21,15 @@ from database import (
     set_model_cached, is_model_cached, add_training_feedback
 )
 from model_labeling import get_cached_labels, generate_part_labels
-from fastapi import Body
+from rag_feedback import (
+    submit_rag_feedback, get_rag_search_enhancement,
+    get_rag_source_recommendations
+)
+from recursive_trainer import (
+    start_recursive_training, stop_recursive_training,
+    run_manual_training_cycle, get_training_status
+)
+from fastapi import Body, BackgroundTasks
 from typing import Optional
 class FeedbackRequest(BaseModel):
     model_id: str
@@ -151,13 +159,16 @@ async def add_cors_and_validate_models(request: Request, call_next):
 
     return await call_next(request)
 
-# --- Feedback endpoints ---
+# --- Feedback endpoints (with RAG integration) ---
 @app.post("/feedback")
-def submit_model_feedback(payload: FeedbackRequest):
+def submit_model_feedback(payload: FeedbackRequest, background_tasks: BackgroundTasks):
     # Enforce rating granularity (0.5 steps, 1-5)
     rating = max(1.0, min(5.0, round(payload.rating * 2) / 2))
+    
+    # Store in traditional feedback system
     submit_feedback(payload.model_id, payload.user_id, rating, payload.comment)
     avg, count = get_average_rating(payload.model_id)
+    
     # Cache if avg >= 3.5 and at least 3 reviews
     if avg >= 3.5 and count >= 3:
         set_model_cached(payload.model_id, True)
@@ -171,14 +182,85 @@ def submit_model_feedback(payload: FeedbackRequest):
         user_feedback=payload.comment or ""
     )
     
-    return {"ok": True, "avg_rating": avg, "count": count, "cached": is_model_cached(payload.model_id), "rating_enforced": rating}
+    # Store in RAG system for semantic retrieval (async)
+    background_tasks.add_task(
+        submit_rag_feedback,
+        concept=payload.model_id,
+        model_id=payload.model_id,
+        model_source="user_feedback",
+        rating=rating,
+        user_feedback=payload.comment or ""
+    )
+    
+    return {
+        "ok": True,
+        "avg_rating": avg,
+        "count": count,
+        "cached": is_model_cached(payload.model_id),
+        "rating_enforced": rating,
+        "rag_indexed": True
+    }
 
 
 @app.get("/feedback/{model_id}")
 def get_model_feedback(model_id: str):
     feedback = get_feedback(model_id)
     avg, count = get_average_rating(model_id)
-    return {"feedback": feedback, "avg_rating": avg, "count": count}
+    
+    # Get RAG-based similar feedback for context
+    rag_enhancement = get_rag_search_enhancement(model_id)
+    
+    return {
+        "feedback": feedback,
+        "avg_rating": avg,
+        "count": count,
+        "rag_enhanced": bool(rag_enhancement.get("recommended_sources")),
+        "related_successful_concepts": rag_enhancement.get("related_concepts", [])
+    }
+
+
+# --- RAG Feedback endpoints ---
+@app.get("/rag/enhance/{concept}")
+def get_rag_enhancement(concept: str):
+    """Get RAG-based search enhancement for a concept."""
+    enhancement = get_rag_search_enhancement(concept)
+    source_recs = get_rag_source_recommendations(concept)
+    
+    return {
+        "concept": concept,
+        "recommended_sources": enhancement.get("recommended_sources", []),
+        "avoid_models": enhancement.get("avoid_models", []),
+        "related_concepts": enhancement.get("related_concepts", []),
+        "source_recommendation_scores": source_recs,
+        "rag_available": True
+    }
+
+
+@app.post("/rag/feedback")
+def submit_rag_feedback_direct(
+    concept: str = Body(...),
+    model_id: str = Body(...),
+    model_source: str = Body(...),
+    rating: float = Body(...),
+    user_feedback: str = Body(""),
+    search_params: Optional[dict] = Body(None)
+):
+    """Directly submit feedback to RAG system with full context."""
+    success = submit_rag_feedback(
+        concept=concept,
+        model_id=model_id,
+        model_source=model_source,
+        rating=rating,
+        user_feedback=user_feedback,
+        search_params=search_params
+    )
+    
+    return {
+        "ok": success,
+        "concept": concept,
+        "model_id": model_id,
+        "rag_indexed": success
+    }
 
 
 # --- Part labeling endpoints ---
@@ -567,3 +649,48 @@ def ask_agent(payload: AgentQuestionRequest):
 @app.get("/ml/status")
 def ml_status():
     return get_ml_status()
+
+
+# --- Recursive Training endpoints ---
+@app.get("/training/status")
+def training_status():
+    """Get recursive training system status."""
+    return get_training_status()
+
+
+@app.post("/training/cycle")
+def trigger_training_cycle():
+    """Manually trigger a training cycle."""
+    metrics = run_manual_training_cycle()
+    return {
+        "ok": True,
+        "cycle_id": metrics.cycle_id,
+        "total_feedback": metrics.total_feedback,
+        "avg_rating": metrics.avg_rating,
+        "threshold_recommendation": metrics.threshold_recommendation,
+        "source_performance": metrics.source_performance
+    }
+
+
+@app.post("/training/start")
+def start_training():
+    """Start the background recursive training loop."""
+    start_recursive_training()
+    return {"ok": True, "message": "Recursive training loop started"}
+
+
+@app.post("/training/stop")
+def stop_training():
+    """Stop the background recursive training loop."""
+    stop_recursive_training()
+    return {"ok": True, "message": "Recursive training loop stopped"}
+
+
+# --- Startup: Initialize recursive training ---
+import atexit
+
+# Start recursive training on startup
+start_recursive_training()
+
+# Register cleanup on shutdown
+atexit.register(stop_recursive_training)

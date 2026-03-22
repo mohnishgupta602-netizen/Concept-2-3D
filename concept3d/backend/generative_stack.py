@@ -14,9 +14,11 @@ except Exception:
     torch = None
 
 try:
-    from diffusers import StableDiffusionPipeline
+    from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline, EulerDiscreteScheduler
 except Exception:
     StableDiffusionPipeline = None
+    StableDiffusionXLPipeline = None
+    EulerDiscreteScheduler = None
 try:
     from diffusers import DPMSolverMultistepScheduler
 except Exception:
@@ -52,6 +54,7 @@ os.environ.setdefault("HUGGINGFACE_HUB_CACHE", _HF_CACHE_DIR)
 
 _SD_PIPE = None
 _SD_MODEL_ID_LOADED = None
+_SD_MODEL_TYPE = None  # 'sd' or 'sdxl'
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -88,29 +91,63 @@ def _resolve_device() -> str:
 
 
 def _get_sd_pipeline(model_id: str, device: str):
-    global _SD_PIPE, _SD_MODEL_ID_LOADED
+    global _SD_PIPE, _SD_MODEL_ID_LOADED, _SD_MODEL_TYPE
 
-    if StableDiffusionPipeline is None or torch is None:
+    if (StableDiffusionPipeline is None and StableDiffusionXLPipeline is None) or torch is None:
         return None
 
     if _SD_PIPE is not None and _SD_MODEL_ID_LOADED == model_id:
         return _SD_PIPE
 
+    # Detect if using SDXL
+    is_sdxl = "xl" in model_id.lower() or "sdxl" in model_id.lower()
+    _SD_MODEL_TYPE = "sdxl" if is_sdxl else "sd"
+
     dtype = torch.float16 if device == "cuda" else torch.float32
 
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
+    # Load appropriate pipeline
+    if is_sdxl and StableDiffusionXLPipeline is not None:
+        print(f"[SD] Loading SDXL model: {model_id}")
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            use_safetensors=True,
+            variant="fp16" if device == "cuda" else None
+        )
+    else:
+        print(f"[SD] Loading SD 1.5 model: {model_id}")
+        pipe = StableDiffusionPipeline.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            use_safetensors=True,
+            safety_checker=None,
+            requires_safety_checker=False
+        )
 
-    # Replace default scheduler with a faster / higher-quality solver if available
+    # Use EulerDiscreteScheduler for better quality
     try:
-        if DPMSolverMultistepScheduler is not None and hasattr(pipe, 'scheduler'):
-            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-    except Exception:
-        pass
+        if EulerDiscreteScheduler is not None and hasattr(pipe, 'scheduler'):
+            pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config)
+            print("[SD] Using EulerDiscreteScheduler for better quality")
+    except Exception as e:
+        print(f"[SD] Could not set Euler scheduler: {e}")
+        # Fallback to DPM
+        try:
+            if DPMSolverMultistepScheduler is not None and hasattr(pipe, 'scheduler'):
+                pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+        except Exception:
+            pass
 
+    # Memory optimizations
     if hasattr(pipe, "enable_attention_slicing"):
         pipe.enable_attention_slicing()
     if hasattr(pipe, "enable_vae_slicing"):
         pipe.enable_vae_slicing()
+    if hasattr(pipe, "enable_xformers_memory_efficient_attention"):
+        try:
+            pipe.enable_xformers_memory_efficient_attention()
+        except Exception:
+            pass
 
     if device == "cuda":
         if hasattr(pipe, "enable_model_cpu_offload"):
@@ -126,14 +163,23 @@ def _get_sd_pipeline(model_id: str, device: str):
 
 
 def _generate_image(prompt: str, key: str) -> str | None:
-    model_id = os.getenv("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5").strip()
-    steps = int(os.getenv("SD_NUM_STEPS", "30"))
-    width = int(os.getenv("SD_IMAGE_WIDTH", "640"))
-    height = int(os.getenv("SD_IMAGE_HEIGHT", "640"))
-    guidance_scale = float(os.getenv("SD_GUIDANCE_SCALE", "7.5"))
-    negative_prompt = os.getenv("SD_NEGATIVE_PROMPT", "text, watermark, logo, low quality, deformed, blurry, cartoon").strip()
+    model_id = os.getenv("SD_MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0").strip()
+    steps = int(os.getenv("SD_NUM_STEPS", "40"))
+    width = int(os.getenv("SD_IMAGE_WIDTH", "768"))
+    height = int(os.getenv("SD_IMAGE_HEIGHT", "768"))
+    guidance_scale = float(os.getenv("SD_GUIDANCE_SCALE", "8.0"))
+    
+    # Enhanced negative prompt for 3D generation
+    negative_prompt = os.getenv(
+        "SD_NEGATIVE_PROMPT", 
+        "text, watermark, logo, signature, low quality, blurry, deformed, cartoon, anime, painting, drawing, sketch, illustration, distorted, ugly, duplicate, multiple objects, cropped, out of frame, worst quality, low resolution"
+    ).strip()
+    
     num_candidates = int(os.getenv("SD_NUM_CANDIDATES", "2"))
     sd_seed = os.getenv("SD_SEED", "").strip()
+    
+    # OpenLRM-specific optimizations
+    openlrm_optimized = _env_bool("SD_OPENLRM_OPTIMIZED", True)
 
     image_path = os.path.join(_IMAGE_DIR, f"{key}.png")
     if os.path.exists(image_path):
@@ -144,10 +190,21 @@ def _generate_image(prompt: str, key: str) -> str | None:
     if pipe is None:
         return None
 
-    prompt_final = (
-        f"{prompt}, highly detailed 3D model, photorealistic render, PBR materials, crisp geometry, "
-        "studio lighting, 3/4 view and front view, neutral background, no text, no watermark"
-    )
+    # Enhanced prompt engineering for 3D model generation
+    if openlrm_optimized:
+        # OpenLRM works best with clean, centered objects on neutral backgrounds
+        prompt_final = (
+            f"{prompt}, professional product photography, centered composition, "
+            "clean white background, soft studio lighting from 45 degrees, "
+            "photorealistic 3D render, high detail, sharp focus, "
+            "ambient occlusion, physically based rendering, material definition, "
+            "single object, isolated on white, orthographic perspective"
+        )
+    else:
+        prompt_final = (
+            f"{prompt}, highly detailed 3D model, photorealistic render, PBR materials, crisp geometry, "
+            "studio lighting, 3/4 view and front view, neutral background, no text, no watermark"
+        )
 
     # Prepare generator/seed
     generator = None

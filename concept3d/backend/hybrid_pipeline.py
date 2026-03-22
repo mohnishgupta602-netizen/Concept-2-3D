@@ -14,6 +14,7 @@ from typing import Any
 import requests
 from generative_stack import generate_ml_glb
 from sketchfab_scraper import scrape_sketchfab_model, download_from_api
+from rag_feedback import get_rag_search_enhancement, get_rag_source_recommendations
 from gemini_search import (
     get_enhanced_query,
     calculate_semantic_similarity,
@@ -847,6 +848,18 @@ def run_hybrid_pipeline(concept: str, models_dir: str, backend_base_url: str) ->
             },
         }
 
+    # Get RAG-based search enhancement from historical feedback
+    print(f"[RAG] Retrieving feedback-based recommendations for: {concept}")
+    rag_enhancement = get_rag_search_enhancement(concept)
+    rag_source_recs = get_rag_source_recommendations(concept)
+    
+    if rag_enhancement.get("recommended_sources"):
+        print(f"[RAG] Recommended sources: {rag_enhancement['recommended_sources']}")
+    if rag_enhancement.get("avoid_models"):
+        print(f"[RAG] Avoiding {len(rag_enhancement['avoid_models'])} poorly-rated models")
+    if rag_enhancement.get("related_concepts"):
+        print(f"[RAG] Related successful concepts: {rag_enhancement['related_concepts'][:3]}")
+
     candidates: list[Candidate] = []
     
     # Get Gemini-enhanced search queries
@@ -876,6 +889,15 @@ def run_hybrid_pipeline(concept: str, models_dir: str, backend_base_url: str) ->
     except Exception:
         pass
 
+    # Filter out models that have been poorly rated in the past
+    avoid_models = set(rag_enhancement.get("avoid_models", []))
+    if avoid_models:
+        original_count = len(candidates)
+        candidates = [c for c in candidates if c.source_id not in avoid_models]
+        filtered_count = original_count - len(candidates)
+        if filtered_count > 0:
+            print(f"[RAG] Filtered {filtered_count} poorly-rated models")
+
     ranked: list[tuple[float, Candidate]] = []
     
     # First pass: score all candidates without Gemini (fast)
@@ -902,14 +924,40 @@ def run_hybrid_pipeline(concept: str, models_dir: str, backend_base_url: str) ->
 
     ranked.sort(key=lambda item: item[0], reverse=True)
     
-    # Prioritize BlenderKit over Sketchfab by source tier
+    # Prioritize BlenderKit over Sketchfab by source tier with RAG-based adjustments
     def _source_priority(candidate):
         # Lower number = higher priority
-        return 0 if candidate.source == "blenderkit" else 1 if candidate.source == "sketchfab" else 2
+        base_priority = 0 if candidate.source == "blenderkit" else 1 if candidate.source == "sketchfab" else 2
+        
+        # Adjust priority based on RAG feedback
+        source_rec_score = rag_source_recs.get(candidate.source, 0.5)
+        if source_rec_score > 0.7:
+            # Boost priority for highly-rated sources
+            return max(0, base_priority - 1)
+        elif source_rec_score < 0.3:
+            # Lower priority for poorly-rated sources
+            return base_priority + 1
+        return base_priority
+    
+    # Apply source bias with RAG-based adjustments
+    def _get_source_bias(candidate):
+        # Base bias
+        if candidate.source == "blenderkit":
+            base_bias = 0.25
+        elif candidate.source == "sketchfab":
+            base_bias = 0.08
+        else:
+            base_bias = 0.04
+        
+        # Adjust based on RAG recommendations
+        source_rec_score = rag_source_recs.get(candidate.source, 0.5)
+        # Scale: 0.0-1.0 -> -0.1 to +0.1 adjustment
+        rag_adjustment = (source_rec_score - 0.5) * 0.2
+        
+        return base_bias + rag_adjustment
     
     # Re-sort by score first, then by source priority (group by tier)
-    # Give BlenderKit a 0.15 score boost to push it above Sketchfab
-    ranked = [(s + (0.15 if c.source == "blenderkit" else 0), c) for s, c in ranked]
+    ranked = [(s + _get_source_bias(c), c) for s, c in ranked]
     ranked.sort(key=lambda item: (-item[0], _source_priority(item[1])))
     
     # DISABLED: Gemini re-ranking to save API quota
@@ -937,7 +985,9 @@ def run_hybrid_pipeline(concept: str, models_dir: str, backend_base_url: str) ->
             continue
 
         viewer = f"{backend_base_url}/models/{filename}"
-        return {
+        
+        # Include RAG metadata in response for tracking
+        result = {
             "type": "retrieved",
             "model_url": viewer,
             "metadata": {
@@ -947,8 +997,12 @@ def run_hybrid_pipeline(concept: str, models_dir: str, backend_base_url: str) ->
                 "description": candidate.description,
                 "tags": candidate.tags,
                 "format": candidate.format_type,
+                "rag_enhanced": bool(rag_enhancement.get("recommended_sources")),
+                "source_recommendation_score": round(rag_source_recs.get(candidate.source, 0.5), 2),
             },
         }
+        
+        return result
 
     ml_generation = generate_ml_glb(concept=concept, models_dir=models_dir)
     if ml_generation:
