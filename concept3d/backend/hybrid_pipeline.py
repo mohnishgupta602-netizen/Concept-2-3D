@@ -334,24 +334,66 @@ def _semantic_similarity(concept: str, text: str) -> float:
 
 
 def _token_overlap(concept_tokens: list[str], text_tokens: list[str]) -> float:
+    """
+    Calculate token overlap with stricter penalties for partial matches.
+    For multi-word concepts, requires high coverage for a good score.
+    """
     if not concept_tokens or not text_tokens:
         return 0.0
+    
     cset = set(concept_tokens)
     tset = set(text_tokens)
-    intersection = len(cset.intersection(tset))
-    return intersection / max(1, len(cset))
+    intersection = cset.intersection(tset)
+    
+    if not intersection:
+        return 0.0
+    
+    # For multi-word concepts, require at least 75% of words to match
+    if len(cset) > 1:
+        coverage = len(intersection) / len(cset)
+        if coverage >= 0.75:
+            return coverage * 0.8  # Good coverage
+        elif coverage >= 0.5:
+            return coverage * 0.3  # Partial coverage, heavily penalized
+        else:
+            return 0.0  # Poor coverage, no score
+    else:
+        # Single word concept
+        return len(intersection) / max(1, len(cset))
 
 
 def _phrase_match(concept: str, text: str) -> float:
+    """
+    Strict phrase matching for multi-word concepts.
+    For 'Solar System', both 'solar' AND 'system' must be present.
+    """
     concept_normalized = _normalize_text(concept)
     text_normalized = _normalize_text(text)
     if not concept_normalized or not text_normalized:
         return 0.0
+    
+    # Full phrase match = highest score
     if concept_normalized in text_normalized:
         return 1.0
-    if any(token in text_normalized for token in _keywords(concept)):
-        return 0.35
-    return 0.0
+    
+    # For multi-word concepts, require ALL keywords to be present
+    concept_keywords = _keywords(concept)
+    if len(concept_keywords) > 1:
+        # Multi-word concept: all keywords must be in text
+        all_present = all(keyword in text_normalized for keyword in concept_keywords)
+        if all_present:
+            return 0.6  # Good match but not exact phrase
+        else:
+            # Only partial match - heavily penalized
+            present_count = sum(1 for k in concept_keywords if k in text_normalized)
+            # Only give small credit if most words match
+            if present_count >= len(concept_keywords) * 0.75:
+                return 0.15
+            else:
+                return 0.0  # Missing key words
+    else:
+        # Single word concept: simple presence check
+        return 0.35 if concept_keywords and concept_keywords[0] in text_normalized else 0.0
 
 
 def _quality_signal(candidate: Candidate) -> float:
@@ -391,10 +433,10 @@ def _composite_score(concept: str, candidate: Candidate, use_gemini: bool = True
     quality = _quality_signal(candidate)
 
     score = (
-        semantic * 0.40  # Increased weight for semantic (Gemini is more accurate)
-        + overlap * 0.28
-        + phrase * 0.18
-        + quality * 0.14
+        semantic * 0.45  # Increased weight for semantic accuracy
+        + overlap * 0.30  # Token overlap with stricter penalties
+        + phrase * 0.15  # Phrase matching (now stricter)
+        + quality * 0.10  # Source quality signal
     )
 
     return max(0.0, min(1.0, score))
