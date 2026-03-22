@@ -11,6 +11,10 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [userRating, setUserRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [avgRating, setAvgRating] = useState(null);
 
   const handleSearch = async (e, directQuery = null) => {
     if (e) e.preventDefault();
@@ -22,6 +26,10 @@ function App() {
     setResult(null);
     setChatMessages([]);
     setChatInput("");
+    setUserRating(0);
+    setHoverRating(0);
+    setRatingSubmitted(false);
+    setAvgRating(null);
     window.speechSynthesis.cancel();
 
     try {
@@ -31,6 +39,11 @@ function App() {
       const data = await res.json();
       setResult({ ...data, query_concept: activeQuery });
       setConcept(activeQuery);
+      
+      // Fetch average rating if model exists
+      if (data.data?.uid || data.metadata?.name) {
+        fetchAvgRating(data.data?.uid || data.metadata?.name);
+      }
     } catch (err) {
       console.error(err);
       setError("Error connecting to Engine Backend / AI Generation Timeout.");
@@ -152,6 +165,76 @@ function App() {
       // Directs user to download the generated .glb file served locally
       window.open(viewerUrl, '_blank');
     }
+  };
+
+  const fetchAvgRating = async (modelId) => {
+    try {
+      const res = await fetch(`http://localhost:8000/feedback/${modelId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.avg_rating) {
+          setAvgRating(data.avg_rating);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch rating:", err);
+    }
+  };
+
+  const handleRatingSubmit = async (rating) => {
+    const modelId = result?.data?.uid || result?.metadata?.name || result?.query_concept;
+    if (!modelId) return;
+    
+    try {
+      const res = await fetch('http://localhost:8000/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id: modelId,
+          user_id: 'anonymous_user',
+          rating: rating,
+          comment: ''
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setRatingSubmitted(true);
+        setAvgRating(data.avg_rating);
+        setUserRating(rating);
+      }
+    } catch (err) {
+      console.error("Failed to submit rating:", err);
+    }
+  };
+
+  const renderStars = () => {
+    const stars = [];
+    const displayRating = hoverRating || userRating || 0;
+    
+    for (let i = 1; i <= 5; i++) {
+      const isHalf = displayRating >= i - 0.5 && displayRating < i;
+      const isFull = displayRating >= i;
+      
+      stars.push(
+        <span
+          key={i}
+          className="star"
+          onMouseEnter={() => !ratingSubmitted && setHoverRating(i)}
+          onMouseLeave={() => setHoverRating(0)}
+          onClick={() => !ratingSubmitted && handleRatingSubmit(i)}
+          style={{
+            cursor: ratingSubmitted ? 'default' : 'pointer',
+            color: isFull ? '#ffd700' : isHalf ? '#ffd700' : '#444',
+            fontSize: '1.5rem',
+            marginRight: '0.2rem'
+          }}
+        >
+          {isHalf ? '★' : '★'}
+        </span>
+      );
+    }
+    return stars;
   };
 
   const playAudioDescription = () => {
@@ -294,6 +377,37 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Rating System */}
+                <div className="rating-section" style={{marginTop: '1.5rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap'}}>
+                    <div>
+                      <div style={{fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.3rem'}}>
+                        {ratingSubmitted ? 'Thank you for your rating!' : 'Rate this model:'}
+                      </div>
+                      <div style={{display: 'flex', alignItems: 'center'}}>
+                        {renderStars()}
+                      </div>
+                    </div>
+                    
+                    {avgRating !== null && (
+                      <div style={{marginLeft: 'auto', textAlign: 'right'}}>
+                        <div style={{fontSize: '1.2rem', color: '#ffd700', fontWeight: 'bold'}}>
+                          {avgRating.toFixed(1)} ★
+                        </div>
+                        <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
+                          Average Rating
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {ratingSubmitted && (
+                    <div style={{marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--accent)'}}>
+                      Your feedback helps improve future model recommendations!
+                    </div>
+                  )}
+                </div>
               </section>
 
               <aside className="agent-sidebar">

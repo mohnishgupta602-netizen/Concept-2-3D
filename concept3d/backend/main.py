@@ -1,21 +1,56 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
+from fastapi import HTTPException, Request
 import os
 import re
 import requests
+import mimetypes
 from difflib import SequenceMatcher
 from pydantic import BaseModel
 from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 from fallback import generate_fallback
 from hybrid_pipeline import run_hybrid_pipeline
 from generative_stack import get_ml_status
-from database import save_search_result
+from database import (
+    save_search_result, save_part_labels, get_part_labels,
+    submit_feedback, get_feedback, get_average_rating,
+    set_model_cached, is_model_cached, add_training_feedback
+)
+from model_labeling import get_cached_labels, generate_part_labels
+from fastapi import Body
+from typing import Optional
+class FeedbackRequest(BaseModel):
+    model_id: str
+    user_id: str
+    rating: float
+    comment: Optional[str] = None
+
+class PartLabelsRequest(BaseModel):
+    model_id: str
+    concept: Optional[str] = None
+    part_labels: Optional[dict] = None
+    auto_generate: Optional[bool] = False
+# --- AI part labeling using Gemini ---
+def ai_label_parts(model_path: str, concept: str, model_name: str = "") -> dict:
+    """Generate AI-powered part labels for a 3D model."""
+    try:
+        labels = get_cached_labels(
+            model_id=os.path.basename(model_path),
+            concept=concept,
+            model_name=model_name,
+            model_path=model_path
+        )
+        return labels
+    except Exception as e:
+        print(f"[AI Labeling] Failed to label model: {e}")
+        return {"parts": []}
 from wikipedia_api import get_wikipedia_summary
 from vision import classify_image
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 STOPWORDS = {
     "a", "an", "the", "of", "for", "to", "in", "on", "with", "and", "or", "by", "is", "are",
@@ -54,7 +89,129 @@ app.add_middleware(
 # Serve the forged Tripo3D .glb models locally
 models_dir = os.path.join(os.path.dirname(__file__), "models")
 os.makedirs(models_dir, exist_ok=True)
+# Ensure correct MIME types for glTF/GLB so clients don't parse as text/JSON
+mimetypes.add_type("model/gltf-binary", ".glb")
+mimetypes.add_type("model/gltf+json", ".gltf")
+
+
+# Use StaticFiles to serve /models so HEAD requests are supported by the ASGI server.
 app.mount("/models", StaticFiles(directory=models_dir), name="models")
+
+
+# Middleware to add CORS headers and validate requests to /models/* before StaticFiles handles them.
+@app.middleware("http")
+async def add_cors_and_validate_models(request: Request, call_next):
+    # Only intercept requests targeted at /models/
+    if request.url.path.startswith("/models/"):
+        # Add CORS headers to allow frontend access
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+        }
+        
+        # Handle preflight OPTIONS request
+        if request.method == "OPTIONS":
+            return Response(status_code=200, headers=cors_headers)
+        
+        # For HEAD requests, validate and return with CORS headers
+        if request.method == "HEAD":
+            rel_path = request.url.path[len("/models/"):]
+            # protect against directory traversal
+            if ".." in rel_path:
+                return Response(status_code=404, headers=cors_headers)
+            full_path = os.path.join(models_dir, rel_path.lstrip("/"))
+            if not os.path.exists(full_path) or not os.path.isfile(full_path):
+                return Response(status_code=404, headers=cors_headers)
+            # Quick sanity checks for GLB files
+            if full_path.lower().endswith('.glb'):
+                try:
+                    with open(full_path, 'rb') as fh:
+                        hdr = fh.read(16)
+                        if not (hdr[0:4] == b'glTF'):
+                            return Response(status_code=404, headers=cors_headers)
+                except Exception:
+                    return Response(status_code=404, headers=cors_headers)
+            # Return a minimal successful HEAD response with headers
+            media_type = mimetypes.guess_type(full_path)[0] or 'application/octet-stream'
+            headers = {
+                **cors_headers,
+                'content-type': media_type,
+                'content-length': str(os.path.getsize(full_path))
+            }
+            return Response(status_code=200, headers=headers)
+        
+        # For GET requests, let StaticFiles handle it but add CORS headers to response
+        if request.method == "GET":
+            response = await call_next(request)
+            # Add CORS headers to the response
+            for key, value in cors_headers.items():
+                response.headers[key] = value
+            return response
+
+    return await call_next(request)
+
+# --- Feedback endpoints ---
+@app.post("/feedback")
+def submit_model_feedback(payload: FeedbackRequest):
+    # Enforce rating granularity (0.5 steps, 1-5)
+    rating = max(1.0, min(5.0, round(payload.rating * 2) / 2))
+    submit_feedback(payload.model_id, payload.user_id, rating, payload.comment)
+    avg, count = get_average_rating(payload.model_id)
+    # Cache if avg >= 3.5 and at least 3 reviews
+    if avg >= 3.5 and count >= 3:
+        set_model_cached(payload.model_id, True)
+    
+    # Add to training data for recursive model improvement
+    add_training_feedback(
+        concept=payload.model_id,
+        model_id=payload.model_id,
+        model_source="user_feedback",
+        rating=rating,
+        user_feedback=payload.comment or ""
+    )
+    
+    return {"ok": True, "avg_rating": avg, "count": count, "cached": is_model_cached(payload.model_id), "rating_enforced": rating}
+
+
+@app.get("/feedback/{model_id}")
+def get_model_feedback(model_id: str):
+    feedback = get_feedback(model_id)
+    avg, count = get_average_rating(model_id)
+    return {"feedback": feedback, "avg_rating": avg, "count": count}
+
+
+# --- Part labeling endpoints ---
+@app.get("/part-labels/{model_id}")
+def get_labels(model_id: str, concept: Optional[str] = None, auto_generate: bool = False):
+    """Get part labels for a model. If not found and auto_generate=true, generate using AI."""
+    labels = get_part_labels(model_id)
+    
+    if not labels and auto_generate and concept:
+        # Generate AI labels
+        model_path = os.path.join(models_dir, model_id)
+        labels = ai_label_parts(model_path, concept, model_id)
+        # Save generated labels
+        if labels and labels.get("parts"):
+            save_part_labels(model_id, labels)
+    
+    return {"model_id": model_id, "part_labels": labels or {}}
+
+
+@app.post("/part-labels/{model_id}")
+def set_labels(model_id: str, payload: PartLabelsRequest):
+    """Save or auto-generate part labels for a model."""
+    if payload.auto_generate and payload.concept:
+        # Auto-generate labels using AI
+        model_path = os.path.join(models_dir, model_id)
+        labels = ai_label_parts(model_path, payload.concept, payload.model_id or model_id)
+        save_part_labels(model_id, labels)
+        return {"ok": True, "generated": True, "labels": labels}
+    elif payload.part_labels:
+        save_part_labels(model_id, payload.part_labels)
+        return {"ok": True, "generated": False}
+    else:
+        return {"ok": False, "error": "Either part_labels or auto_generate+concept required"}
 
 
 def _normalize_text(value: str) -> str:
@@ -357,7 +514,7 @@ def visualize(concept: str):
             "tags": [],
             "format": "none",
         },
-        "shapes": hybrid_result.get("fallback_shapes", generate_fallback(concept)),
+        "shapes": hybrid_result.get("shapes", generate_fallback(concept)),
         "ai_overview": ai_overview,
     }
 

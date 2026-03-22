@@ -1,4 +1,7 @@
 def generate_fallback(concept):
+    if not concept:
+        return ["cube"]
+    
     primitives = {
         "tree": ["cylinder", "sphere"],
         "heart": ["sphere", "tube"],

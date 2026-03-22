@@ -17,6 +17,10 @@ try:
     from diffusers import StableDiffusionPipeline
 except Exception:
     StableDiffusionPipeline = None
+try:
+    from diffusers import DPMSolverMultistepScheduler
+except Exception:
+    DPMSolverMultistepScheduler = None
 
 try:
     from PIL import Image
@@ -96,6 +100,13 @@ def _get_sd_pipeline(model_id: str, device: str):
 
     pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=dtype)
 
+    # Replace default scheduler with a faster / higher-quality solver if available
+    try:
+        if DPMSolverMultistepScheduler is not None and hasattr(pipe, 'scheduler'):
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    except Exception:
+        pass
+
     if hasattr(pipe, "enable_attention_slicing"):
         pipe.enable_attention_slicing()
     if hasattr(pipe, "enable_vae_slicing"):
@@ -116,10 +127,13 @@ def _get_sd_pipeline(model_id: str, device: str):
 
 def _generate_image(prompt: str, key: str) -> str | None:
     model_id = os.getenv("SD_MODEL_ID", "runwayml/stable-diffusion-v1-5").strip()
-    steps = int(os.getenv("SD_NUM_STEPS", "20"))
-    width = int(os.getenv("SD_IMAGE_WIDTH", "512"))
-    height = int(os.getenv("SD_IMAGE_HEIGHT", "512"))
-    guidance_scale = float(os.getenv("SD_GUIDANCE_SCALE", "6.5"))
+    steps = int(os.getenv("SD_NUM_STEPS", "30"))
+    width = int(os.getenv("SD_IMAGE_WIDTH", "640"))
+    height = int(os.getenv("SD_IMAGE_HEIGHT", "640"))
+    guidance_scale = float(os.getenv("SD_GUIDANCE_SCALE", "7.5"))
+    negative_prompt = os.getenv("SD_NEGATIVE_PROMPT", "text, watermark, logo, low quality, deformed, blurry, cartoon").strip()
+    num_candidates = int(os.getenv("SD_NUM_CANDIDATES", "2"))
+    sd_seed = os.getenv("SD_SEED", "").strip()
 
     image_path = os.path.join(_IMAGE_DIR, f"{key}.png")
     if os.path.exists(image_path):
@@ -131,18 +145,58 @@ def _generate_image(prompt: str, key: str) -> str | None:
         return None
 
     prompt_final = (
-        f"{prompt}, single object, centered, plain white background, "
-        "studio lighting, product render, no text, no watermark"
+        f"{prompt}, highly detailed 3D model, photorealistic render, PBR materials, crisp geometry, "
+        "studio lighting, 3/4 view and front view, neutral background, no text, no watermark"
     )
 
-    output = pipe(
-        prompt_final,
-        num_inference_steps=steps,
-        guidance_scale=guidance_scale,
-        width=width,
-        height=height,
-    )
-    image = output.images[0]
+    # Prepare generator/seed
+    generator = None
+    try:
+        if sd_seed:
+            seed = int(sd_seed)
+            gen_device = "cuda" if device == "cuda" else "cpu"
+            generator = torch.Generator(device=gen_device)
+            generator.manual_seed(seed)
+    except Exception:
+        generator = None
+
+    # Use autocast on CUDA for faster mixed-precision inference
+    images = None
+    try:
+        if device == "cuda":
+            with torch.autocast("cuda"):
+                output = pipe(
+                    prompt=prompt_final,
+                    negative_prompt=negative_prompt,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance_scale,
+                    width=width,
+                    height=height,
+                    num_images_per_prompt=num_candidates,
+                    generator=generator,
+                )
+        else:
+            output = pipe(
+                prompt=prompt_final,
+                negative_prompt=negative_prompt,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                width=width,
+                height=height,
+                num_images_per_prompt=num_candidates,
+                generator=generator,
+            )
+        images = output.images
+    except Exception as e:
+        print(f"Stable Diffusion generation failed: {e}")
+        return None
+
+    # Pick first non-None image
+    image = None
+    if images:
+        image = images[0]
+    if image is None:
+        return None
     image.save(image_path)
     return image_path
 
