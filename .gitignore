@@ -1,0 +1,46 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+*/venv/
+*/.venv/
+
+# Node
+node_modules/
+*/node_modules/
+*/dist/
+*/build/
+.cache/
+
+# Git internals from nested repos (removed, but keep ignored if reintroduced)
+**/.git/
+
+# Large/generated model artifacts
+**/models/*.glb
+**/models/*.gltf
+**/models/*.bin
+**/models/*.fbx
+
+# Databases / caches
+**/chroma_db/
+**/chroma_db_final/
+**/chroma_db_v2/
+**/chroma_db_v3/
+**/reviews.db
+**/hf_cache/
+**/ml/cache/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.production.example
