@@ -1,17 +1,18 @@
-const rawBase = (import.meta.env.VITE_API_BASE_URL || '/api').trim();
+const rawBase = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').trim();
 
 const normalizedBase = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;
 
 export function apiUrl(path) {
   const safePath = path.startsWith('/') ? path : `/${path}`;
+  const apiPath = safePath.startsWith('/api/') || safePath === '/api' ? safePath : `/api${safePath}`;
 
-  if (normalizedBase === '') return safePath;
+  if (normalizedBase === '') return apiPath;
 
   if (/^https?:\/\//i.test(normalizedBase)) {
-    return `${normalizedBase}${safePath}`;
+    return `${normalizedBase}${apiPath}`;
   }
 
-  return `${normalizedBase}${safePath}`;
+  return `${normalizedBase}${apiPath}`;
 }
 
-export const API_BASE_URL = normalizedBase || '/api';
+export const API_BASE_URL = normalizedBase || 'http://127.0.0.1:8000';

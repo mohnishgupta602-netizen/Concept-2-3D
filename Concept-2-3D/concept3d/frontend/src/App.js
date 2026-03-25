@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import ModelViewer from './ModelViewer';
 import './index.css';
 
+const API_BASE_URL = (process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8010').replace(/\/$/, '');
+
 function App() {
   const [concept, setConcept] = useState("");
   const [result, setResult] = useState(null);
@@ -19,7 +21,7 @@ function App() {
   const fetchPartLabels = async (modelId, conceptValue) => {
     if (!modelId) return null;
     try {
-      const url = `http://localhost:8000/part-labels/${encodeURIComponent(modelId)}?auto_generate=true&concept=${encodeURIComponent(conceptValue || concept || '')}`;
+      const url = `${API_BASE_URL}/part-labels/${encodeURIComponent(modelId)}?auto_generate=true&concept=${encodeURIComponent(conceptValue || concept || '')}`;
       const res = await fetch(url);
       if (!res.ok) return null;
       const payload = await res.json();
@@ -48,7 +50,7 @@ function App() {
 
     try {
       // Model generation endpoint can take some time depending on search/download
-      const res = await fetch(`http://localhost:8000/visualize?concept=${encodeURIComponent(activeQuery)}`);
+      const res = await fetch(`${API_BASE_URL}/visualize?concept=${encodeURIComponent(activeQuery)}`);
       if (!res.ok) throw new Error("Failed to generate model");
       const data = await res.json();
       let enriched = { ...data, query_concept: activeQuery };
@@ -94,7 +96,7 @@ function App() {
     formData.append("file", file);
 
     try {
-      const res = await fetch(`http://localhost:8000/upload`, {
+      const res = await fetch(`${API_BASE_URL}/upload`, {
         method: "POST",
         body: formData
       });
@@ -151,7 +153,7 @@ function App() {
     setChatLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/agent/ask", {
+      const res = await fetch(`${API_BASE_URL}/agent/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -198,7 +200,7 @@ function App() {
 
   const fetchAvgRating = async (modelId) => {
     try {
-      const res = await fetch(`http://localhost:8000/feedback/${modelId}`);
+      const res = await fetch(`${API_BASE_URL}/feedback/${modelId}`);
       if (res.ok) {
         const data = await res.json();
         if (data.avg_rating) {
@@ -215,7 +217,7 @@ function App() {
     if (!modelId) return;
     
     try {
-      const res = await fetch('http://localhost:8000/feedback', {
+      const res = await fetch(`${API_BASE_URL}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
